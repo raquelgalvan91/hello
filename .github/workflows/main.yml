@@ -2,33 +2,31 @@ name: via
 
 on:
   schedule:
-    # Run every 3 hours (at minute 0)
-    - cron: "0 */3 * * *"
+    # Run every hour (at minute 0)
+    - cron: "0 * * * *"
   workflow_dispatch:
 
-# Ensure only one workflow run executes at a time across the repo.
-# New runs will wait (be queued) until the current one finishes.
+# Single concurrency group for the whole workflow (repo-level):
+# - This ensures only one workflow run executes at a time.
+# - New runs are queued (cancel-in-progress: false) until the running one finishes.
 concurrency:
   group: "via-workflow"
   cancel-in-progress: false
 
-# Allow the cleanup step to cancel jobs (needs 'actions: write').
-permissions:
-  contents: read
-  actions: write
-
 env:
-  MAX_WORKERS: "20"
+  MAX_WORKERS: "5"  # maximum number of concurrent workers per workflow run
 
 jobs:
   export-and-run:
     runs-on: ubuntu-22.04
 
-    # exactly 20 parallel workers per workflow run
+    # Matrix creates exactly MAX_WORKERS parallel workers per workflow run.
     strategy:
       matrix:
-        worker: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
-      max-parallel: 20
+        # exactly 5 workers
+        worker: [1, 2, 3, 4, 5]
+      # ensure all 5 run concurrently
+      max-parallel: 5
 
     steps:
       - name: Checkout repository
@@ -39,17 +37,17 @@ jobs:
       - name: Download
         shell: bash
         run: |
-          curl -fsSL -o via.zip "${{ secrets.VIA }}"
-          if [ ! -f "via.zip" ]; then
-            echo "Download failed: via.zip not found."
+          curl -fsSL -o via_1h.zip "${{ secrets.VIA }}"
+          if [ ! -f "via_1h.zip" ]; then
+            echo "Download failed: via_1h.zip not found."
             exit 1
           fi
 
       - name: Unzip
         shell: bash
         run: |
-          unzip -q via.zip
-          rm -f via.zip
+          unzip -q via_1h.zip
+          rm -f via_1h.zip
 
       - name: Make runner executable
         shell: bash
@@ -63,4 +61,5 @@ jobs:
           MAX_WORKERS: ${{ env.MAX_WORKERS }}
         run: |
           echo "Starting worker $WORKER_ID of $MAX_WORKERS"
+          # Pass the worker id to your script so each worker can behave differently if needed
           ./via.sh "$WORKER_ID"
